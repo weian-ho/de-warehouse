@@ -1,2 +1,17 @@
-Build a data engineering warehouse that contain the configuration of docker
-Build for the deployment environment for the project 1 
+# de-warehouse
+A local data engineering project for building and testing a PostgresSQL-based data warehouse using Docker.
+
+## Prerequisites
+
+-Docker Desktop
+-Git
+-GNU Make
+
+## How to run
+
+1. Copy the example environment file:
+
+```bash
+cp .env.example .env
+make up
+docker compose ps
