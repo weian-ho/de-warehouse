@@ -1,0 +1,10 @@
+symbols:
+  - BTCUSDT
+base-url: https://data-api.binance.https://data-api.binance.vision
+page_limit: 1000
+log_level: INFO
+http:
+  connect_timeout_s: 3.05
+  read_timeout: 10
+  max_attempts: 5
+  
