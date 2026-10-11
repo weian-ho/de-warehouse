@@ -15,3 +15,9 @@ A local data engineering project for building and testing a PostgresSQL-based da
 cp .env.example .env
 make up
 docker compose ps
+```
+Run:
+docker compose up -d
+docker compose ps
+http://localhost:5050
+add the new server and enter my username and password
