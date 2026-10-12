@@ -5,8 +5,9 @@ description = "Binance market-data ingestion into Postgres (Milestone A1)"
 authors = [
     { name = "Ho Wei An", email = "weian12353@gmail.com" }
 ]
-requires-python = ">=3.14"
+requires-python = ">=3.13"
 dependencies = [
+    "psycopg[binary]>=3.3.6",
     "pydantic-settings>=2.15.0",
     "pyyaml>=6.0.3",
 ]

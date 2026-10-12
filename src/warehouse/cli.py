@@ -18,7 +18,7 @@ logger = logging.getLogger(__name__)
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(prog="warehouse")
+    parser = argparse.ArgumentParser(prog="warehouse")#
     sub = parser.add_subparsers(dest="command", required=True)
 
     sub.add_parser("show-config", help="print loaded settings (password masked)")
