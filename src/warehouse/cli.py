@@ -2,6 +2,7 @@
 
     uv run warehouse show-config
     uv run warehouse bulk <zip> [--batch-id N] [--table schema.table]
+    uv run warehouse agg-trades [--symbol S] [--from-id N] [--max-pages N]
     uv run warehouse ingest            (T029-T030)
 """
 
@@ -13,7 +14,8 @@ from pathlib import Path
 from pydantic import ValidationError
 
 from warehouse.bulk import load_zip
-from warehouse.config import get_settings
+from warehouse.client import BinanceClient
+from warehouse.config import Settings, get_settings
 from warehouse.errors import WarehouseError
 from warehouse.log import new_run_id, setup_logging
 
@@ -32,9 +34,28 @@ def build_parser() -> argparse.ArgumentParser:
     bulk.add_argument("--table", default="raw.agg_trades", help="target schema.table")
     bulk.add_argument("--stage", default="raw.agg_trades_stage", help="staging schema.table")
 
+    agg = sub.add_parser("agg-trades", help="page through REST aggTrades and log each page (no database)")
+    agg.add_argument("--symbol", default=None, help="default: first symbol in config.yaml")
+    agg.add_argument("--from-id", type=int, default=None, help="default: newest trade id - 2500")
+    agg.add_argument("--max-pages", type=int, default=3, help="stop after this many pages")
+
     ingest = sub.add_parser("ingest", help="incremental REST load (T029-T030)")
     ingest.add_argument("--symbol", default=None)
     return parser
+
+
+def show_agg_trades(settings: Settings, symbol: str, from_id: int | None, max_pages: int) -> None:
+    """T028 demo: fetch a few pages through the client and log them. Writes nothing."""
+    with BinanceClient(settings.base_url, settings.http, settings.page_limit) as client:
+        if from_id is None:
+            from_id = client.latest_agg_trade_id(symbol) - 2500
+            logger.info("no --from-id given; starting 2500 trades back at %s", from_id)
+        for n, page in enumerate(client.iter_agg_trades(symbol, from_id), start=1):
+            if n == 1:
+                logger.info("first row as Binance sent it: %s", page.rows[0])
+            if n >= max_pages:
+                logger.info("reached --max-pages=%s; stopping (no further requests are sent)", max_pages)
+                break
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -66,6 +87,8 @@ def main(argv: list[str] | None = None) -> int:
                 target=args.table,
                 stage=args.stage,
             )
+        elif args.command == "agg-trades":
+            show_agg_trades(settings, args.symbol or settings.symbols[0], args.from_id, args.max_pages)
         elif args.command == "ingest":
             logger.warning("ingest not implemented yet (T029-T030)")
     except WarehouseError as exc:
