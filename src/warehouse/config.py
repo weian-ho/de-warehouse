@@ -19,6 +19,8 @@ class HttpSettings(BaseModel):
     connect_timeout_s: float = 3.05
     read_timeout_s: float =10.0
     max_attempts: int = 5
+    retry_base_s: float = 1.0   # T028:first backoff ceiling; doubles each failed attempt
+    retry_cap_s: float = 30.0   # T028:backoff ceiling never grows past this
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
