@@ -3,7 +3,9 @@
     uv run warehouse show-config
     uv run warehouse bulk <zip> [--batch-id N] [--table schema.table]
     uv run warehouse agg-trades [--symbol S] [--from-id N] [--max-pages N]
-    uv run warehouse ingest            (T029-T030)
+    uv run warehouse extract [--symbol S] [--from-id N] [--max-pages N] [--stop-at-id N]
+    uv run warehouse exchangeinfo
+    uv run warehouse ingest            (T030)
 """
 
 import argparse
@@ -17,6 +19,7 @@ from warehouse.bulk import load_zip
 from warehouse.client import BinanceClient
 from warehouse.config import Settings, get_settings
 from warehouse.errors import WarehouseError
+from warehouse.extract import run_exchange_info, run_extract
 from warehouse.log import new_run_id, setup_logging
 
 logger = logging.getLogger(__name__)
@@ -39,7 +42,15 @@ def build_parser() -> argparse.ArgumentParser:
     agg.add_argument("--from-id", type=int, default=None, help="default: newest trade id - 2500")
     agg.add_argument("--max-pages", type=int, default=3, help="stop after this many pages")
 
-    ingest = sub.add_parser("ingest", help="incremental REST load (T029-T030)")
+    ext = sub.add_parser("extract", help="land aggTrades pages in bronze, starting from the watermark")
+    ext.add_argument("--symbol", default=None, help="default: first symbol in config.yaml")
+    ext.add_argument("--from-id", type=int, default=None, help="override the watermark and start here")
+    ext.add_argument("--max-pages", type=int, default=100, help="cap on pages per run (default 100)")
+    ext.add_argument("--stop-at-id", type=int, default=None, help="stop after this trade id (inclusive)")
+
+    sub.add_parser("exchangeinfo", help="land one exchangeInfo snapshot per configured symbol in bronze")
+
+    ingest = sub.add_parser("ingest", help="incremental REST load (T030)")
     ingest.add_argument("--symbol", default=None)
     return parser
 
@@ -89,8 +100,22 @@ def main(argv: list[str] | None = None) -> int:
             )
         elif args.command == "agg-trades":
             show_agg_trades(settings, args.symbol or settings.symbols[0], args.from_id, args.max_pages)
+        elif args.command == "extract":
+            with BinanceClient(settings.base_url, settings.http, settings.page_limit) as client:
+                run_extract(
+                    client,
+                    settings.dsn.get_secret_value(),
+                    args.symbol or settings.symbols[0],
+                    run_id,
+                    from_id=args.from_id,
+                    max_pages=args.max_pages,
+                    stop_at_id=args.stop_at_id,
+                )
+        elif args.command == "exchangeinfo":
+            with BinanceClient(settings.base_url, settings.http, settings.page_limit) as client:
+                run_exchange_info(client, settings.dsn.get_secret_value(), settings.symbols, run_id)
         elif args.command == "ingest":
-            logger.warning("ingest not implemented yet (T029-T030)")
+            logger.warning("ingest not implemented yet (T030)")
     except WarehouseError as exc:
         logger.error("command=%s failed: %s", args.command, exc)
         return 1
