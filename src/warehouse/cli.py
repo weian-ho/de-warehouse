@@ -5,7 +5,8 @@
     uv run warehouse agg-trades [--symbol S] [--from-id N] [--max-pages N]
     uv run warehouse extract [--symbol S] [--from-id N] [--max-pages N] [--stop-at-id N]
     uv run warehouse exchangeinfo
-    uv run warehouse ingest            (T030)
+    uv run warehouse ingest [--symbol S] [--from-id N] [--max-pages N] [--stop-at-id N]
+    uv run warehouse load --run-id RUN [--symbol S]
 """
 
 import argparse
@@ -20,6 +21,7 @@ from warehouse.client import BinanceClient
 from warehouse.config import Settings, get_settings
 from warehouse.errors import WarehouseError
 from warehouse.extract import run_exchange_info, run_extract
+from warehouse.load import load_run
 from warehouse.log import new_run_id, setup_logging
 
 logger = logging.getLogger(__name__)
@@ -50,9 +52,38 @@ def build_parser() -> argparse.ArgumentParser:
 
     sub.add_parser("exchangeinfo", help="land one exchangeInfo snapshot per configured symbol in bronze")
 
-    ingest = sub.add_parser("ingest", help="incremental REST load (T030)")
-    ingest.add_argument("--symbol", default=None)
+    ing = sub.add_parser("ingest", help="extract to bronze, then load that run into raw (moves the watermark)")
+    ing.add_argument("--symbol", default=None, help="default: first symbol in config.yaml")
+    ing.add_argument("--from-id", type=int, default=None, help="override the watermark and start here")
+    ing.add_argument("--max-pages", type=int, default=100, help="cap on pages per run (default 100)")
+    ing.add_argument("--stop-at-id", type=int, default=None, help="stop after this trade id (inclusive)")
+
+    ld = sub.add_parser("load", help="re-load one run's pages from bronze into raw (no API calls)")
+    ld.add_argument("--run-id", required=True, help="run_id of the extract run to load")
+    ld.add_argument("--symbol", default=None, help="default: first symbol in config.yaml")
     return parser
+
+
+def ingest(settings: Settings, args: argparse.Namespace, run_id: str) -> None:
+    """extract (T029) then load (T030) under one run_id.
+
+    If extract fails part-way (429s exhausted, 418, outage), the pages it already
+    landed are still loaded before the error is reported, so the watermark keeps
+    the progress and the next run continues from there.
+    """
+    symbol = args.symbol or settings.symbols[0]
+    dsn = settings.dsn.get_secret_value()
+    extract_error: WarehouseError | None = None
+    with BinanceClient(settings.base_url, settings.http, settings.page_limit) as client:
+        try:
+            run_extract(client, dsn, symbol, run_id, from_id=args.from_id,
+                        max_pages=args.max_pages, stop_at_id=args.stop_at_id)
+        except WarehouseError as exc:
+            extract_error = exc
+            logger.warning("extract stopped early (%s); loading the pages that did land", exc)
+    load_run(dsn, run_id, symbol)
+    if extract_error is not None:
+        raise extract_error
 
 
 def show_agg_trades(settings: Settings, symbol: str, from_id: int | None, max_pages: int) -> None:
@@ -115,7 +146,9 @@ def main(argv: list[str] | None = None) -> int:
             with BinanceClient(settings.base_url, settings.http, settings.page_limit) as client:
                 run_exchange_info(client, settings.dsn.get_secret_value(), settings.symbols, run_id)
         elif args.command == "ingest":
-            logger.warning("ingest not implemented yet (T030)")
+            ingest(settings, args, run_id)
+        elif args.command == "load":
+            load_run(settings.dsn.get_secret_value(), args.run_id, args.symbol or settings.symbols[0])
     except WarehouseError as exc:
         logger.error("command=%s failed: %s", args.command, exc)
         return 1
