@@ -6,7 +6,8 @@
     uv run warehouse extract [--symbol S] [--from-id N] [--max-pages N] [--stop-at-id N]
     uv run warehouse exchangeinfo
     uv run warehouse ingest [--symbol S] [--from-id N] [--max-pages N] [--stop-at-id N]
-    uv run warehouse load --run-id RUN [--symbol S]
+    uv run warehouse load --run-id RUN [--symbol S] [--table schema.table] [--no-watermark]
+    uv run warehouse validate [--symbol S] [--run-id RUN]
 """
 
 import argparse
@@ -23,6 +24,8 @@ from warehouse.errors import WarehouseError
 from warehouse.extract import run_exchange_info, run_extract
 from warehouse.load import load_run
 from warehouse.log import new_run_id, setup_logging
+from warehouse.validate import FAIL, format_summary, validate_run
+
 
 logger = logging.getLogger(__name__)
 
@@ -61,6 +64,11 @@ def build_parser() -> argparse.ArgumentParser:
     ld = sub.add_parser("load", help="re-load one run's pages from bronze into raw (no API calls)")
     ld.add_argument("--run-id", required=True, help="run_id of the extract run to load")
     ld.add_argument("--symbol", default=None, help="default: first symbol in config.yaml")
+    ld.add_argument("--table", default="raw.binance_agg_trades", help="target schema.table")
+    ld.add_argument("--no-watermark", action="store_true", help="side load: do not touch the watermark")
+    val = sub.add_parser("validate", help="freshness, volume and schema checks for one ingest run")##we want to recognise this subcommand
+    val.add_argument("--symbol", default=None, help="default: first symbol in config.yaml")##allow we specify it in the command line
+    val.add_argument("--run-id", default=None, help="default: the latest aggTrades run for the symbol")
     return parser
 
 
@@ -148,7 +156,22 @@ def main(argv: list[str] | None = None) -> int:
         elif args.command == "ingest":
             ingest(settings, args, run_id)
         elif args.command == "load":
-            load_run(settings.dsn.get_secret_value(), args.run_id, args.symbol or settings.symbols[0])
+             load_run(
+                settings.dsn.get_secret_value(),
+                args.run_id,
+                args.symbol or settings.symbols[0],
+                target=args.table,
+                advance_watermark=not args.no_watermark,
+            )
+        elif args.command == "validate":
+            used_run, results = validate_run(
+                settings.dsn.get_secret_value(), args.symbol or settings.symbols[0], args.run_id
+            )
+            print(format_summary(used_run, results))
+            failed = [r.check for r in results if r.status == FAIL]
+            if failed:
+                logger.error("command=validate: failed checks %s", failed)
+                return 1
     except WarehouseError as exc:
         logger.error("command=%s failed: %s", args.command, exc)
         return 1

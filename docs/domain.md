@@ -28,3 +28,4 @@ venue's own data products — and when they don't, is it a market event or a dat
 - ETHBTC is thin: minutes with no trades are normal, not failures
 - ETHBTC quote_volume has rounding residue (~4e-6) → needs a relative tolerance
 - 30 BTCUSDT minutes have trades but no candle — cause: ______
+- Timestamp precision differs by path. Bulk daily files before 2025-01-01 carry millisecond timestamps; the REST API with X-MBX-TIME-UNIT: MICROSECOND carries true microseconds. Converting ms to µs cannot recover the sub-millisecond detail. REST vs bulk reconciliation therefore compares timestamps at millisecond precision, and reports the maximum sub-millisecond difference.

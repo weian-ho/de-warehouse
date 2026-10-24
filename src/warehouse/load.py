@@ -14,6 +14,7 @@ from decimal import Decimal, InvalidOperation
 from typing import Any
 
 import psycopg
+from psycopg import sql
 
 from warehouse.client import AGG_TRADES_PATH
 from warehouse.errors import PermanentError, TransientError
@@ -25,13 +26,15 @@ logger = logging.getLogger(__name__)
 
 REQUIRED_KEYS = ("a", "p", "q", "f", "l", "T", "m", "M")
 
-INSERT_SQL = """
-    INSERT INTO raw.binance_agg_trades
+DEFAULT_TARGET = "raw.binance_agg_trades"
+
+INSERT_SQL = sql.SQL("""
+    INSERT INTO {table}
         (symbol, agg_trade_id, price, qty, first_trade_id, last_trade_id,
          ts_us, is_buyer_maker, is_best_match, source, bronze_page_id)
     VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
     ON CONFLICT (symbol, agg_trade_id) DO NOTHING
-"""
+""")
 
 UPSERT_WATERMARK_SQL = """
     INSERT INTO meta.ingest_state (source, symbol, last_agg_trade_id, updated_at)
@@ -97,8 +100,17 @@ def _read_watermark_for_update(conn: psycopg.Connection, symbol: str) -> int | N
     return None if row is None else int(row[0])
 
 
-def load_run(dsn: str, run_id: str, symbol: str) -> LoadResult:
-    """Load every aggTrades page of one run from bronze into raw, in ONE transaction.
+def load_run(
+    dsn: str,
+    run_id: str,
+    symbol: str,
+    target: str = DEFAULT_TARGET,
+    advance_watermark: bool = True,
+) -> LoadResult:
+    """Load every aggTrades page of one run from bronze into `target`, in ONE transaction.
+
+    advance_watermark=False is for side loads (e.g. a reconciliation table): the
+    trades land, the watermark is left exactly as it was.
 
     Watermark rules (it must always mean "everything up to here is loaded"):
       * moves only forward (GREATEST), never back;
@@ -130,15 +142,19 @@ def load_run(dsn: str, run_id: str, symbol: str) -> LoadResult:
                                      SOURCE, bronze_id))
 
                 with conn.cursor() as cur:
-                    cur.executemany(INSERT_SQL, rows)
+                    cur.executemany(INSERT_SQL.format(table=sql.Identifier(*target.split("."))), rows)
                     inserted = cur.rowcount  # rows actually inserted (conflicts count 0)
 
                 run_min = min(r[1] for r in rows)
                 run_max = max(r[1] for r in rows)
-                wm_after = _advance_watermark(conn, symbol, wm_before, run_min, run_max)
+                if advance_watermark:
+                    wm_after = _advance_watermark(conn, symbol, wm_before, run_min, run_max)
+                else:
+                    wm_after=wm_before
+                    logger.info("%s: side load into %s; watermark left untouched", symbol, target)
 
-        logger.info("%s: run %s -> %s pages, %s trades offered, %s new in raw; watermark %s -> %s",
-                    symbol, run_id, len(pages), len(rows), inserted, wm_before, wm_after)
+        logger.info("%s: run %s -> %s pages, %s trades offered, %s new in %s; watermark %s -> %s",
+                    symbol, run_id, len(pages), len(rows), inserted, target, wm_before, wm_after)
         return LoadResult(run_id, symbol, len(pages), len(rows), inserted, wm_before, wm_after)
 
     except psycopg.Error as exc:
