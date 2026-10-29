@@ -17,7 +17,7 @@ from typing import Any
 import psycopg
 from psycopg.types.json import Jsonb
 
-from warehouse.client import BinanceClient, Page
+from warehouse.client import BinanceClient
 from warehouse.errors import PermanentError, TransientError
 
 logger = logging.getLogger(__name__)
@@ -112,7 +112,9 @@ def run_extract(
         with psycopg.connect(dsn) as conn:
             start = _choose_start(conn, client, symbol, from_id)
             for page in client.iter_agg_trades(symbol, start, stop_at_id=stop_at_id):
-                bronze_id = land_response(conn, page.endpoint, page.params, page.fetched_at, run_id, page.rows)
+                bronze_id = land_response(
+                    conn, page.endpoint, page.params, page.fetched_at, run_id, page.rows
+                )
                 conn.commit()  # the batching is the page: this page is now safe
                 pages += 1
                 rows += len(page.rows)

@@ -8,7 +8,7 @@ from warehouse.client import AGG_TRADES_PATH, BinanceClient
 from warehouse.config import HttpSettings
 from warehouse.errors import Banned, PermanentError, RateLimited, TransientError
 
-BASE = "https://api.test"                 # never contacted: responses intercepts every request
+BASE = "https://api.test"  # never contacted: responses intercepts every request
 URL = BASE + AGG_TRADES_PATH
 PARAMS = {"symbol": "BTCUSDT", "limit": 1}
 
@@ -28,7 +28,7 @@ def rows(*ids):
 @responses.activate
 def test_429_raises_rate_limited_carrying_retry_after():
     responses.get(URL, status=429, headers={"Retry-After": "7"})
-    client, _ = make_client(max_attempts=1)            # one attempt: see the raw classification
+    client, _ = make_client(max_attempts=1)  # one attempt: see the raw classification
 
     with pytest.raises(RateLimited) as err:
         client.get_json(AGG_TRADES_PATH, PARAMS)
@@ -39,19 +39,21 @@ def test_429_raises_rate_limited_carrying_retry_after():
 @responses.activate
 def test_418_raises_banned_and_never_retries():
     responses.get(URL, status=418, headers={"Retry-After": "120"})
-    client, sleeps = make_client(max_attempts=5)       # retries allowed, yet none may happen
+    client, sleeps = make_client(max_attempts=5)  # retries allowed, yet none may happen
 
     with pytest.raises(Banned):
         client.get_json(AGG_TRADES_PATH, PARAMS)
-    assert len(responses.calls) == 1                   # exactly one request reached "Binance"
-    assert sleeps == []                                 # and no waiting for a retry
+    assert len(responses.calls) == 1  # exactly one request reached "Binance"
+    assert sleeps == []  # and no waiting for a retry
 
 
 # ---- Test 5: classification ----------------------------------------------------------------
 @pytest.mark.parametrize(
     ("status", "error"),
-    [pytest.param(503, TransientError, id="503 -> TransientError"),
-     pytest.param(400, PermanentError, id="400 -> PermanentError")],
+    [
+        pytest.param(503, TransientError, id="503 -> TransientError"),
+        pytest.param(400, PermanentError, id="400 -> PermanentError"),
+    ],
 )
 @responses.activate
 def test_status_codes_map_to_error_classes(status, error):
@@ -65,8 +67,8 @@ def test_status_codes_map_to_error_classes(status, error):
 # ---- Test 6: retry loop --------------------------------------------------------------------
 @responses.activate
 def test_transient_failure_then_success_is_retried():
-    responses.get(URL, status=503)                     # registered in order:
-    responses.get(URL, json=rows(1))                   # 1st call 503, 2nd call 200
+    responses.get(URL, status=503)  # registered in order:
+    responses.get(URL, json=rows(1))  # 1st call 503, 2nd call 200
     client, sleeps = make_client()
 
     assert client.get_json(AGG_TRADES_PATH, PARAMS) == rows(1)
@@ -77,26 +79,27 @@ def test_transient_failure_then_success_is_retried():
 # ---- Test 7: termination -------------------------------------------------------------------
 @responses.activate
 def test_pagination_stops_on_an_empty_page():
-    q = lambda from_id: [matchers.query_param_matcher(
-        {"symbol": "BTCUSDT", "fromId": str(from_id), "limit": "3"})]
-    responses.get(URL, json=rows(100, 101, 102), match=q(100))   # full page -> keep going
-    responses.get(URL, json=[], match=q(103))                    # empty -> caught up
+    def q(from_id):
+        return [matchers.query_param_matcher({"symbol": "BTCUSDT", "fromId": str(from_id), "limit": "3"})]
+
+    responses.get(URL, json=rows(100, 101, 102), match=q(100))  # full page -> keep going
+    responses.get(URL, json=[], match=q(103))  # empty -> caught up
     client, _ = make_client(page_limit=3)
 
     pages = list(client.iter_agg_trades("BTCUSDT", from_id=100))
 
     assert [[r["a"] for r in p.rows] for p in pages] == [[100, 101, 102]]
-    assert len(responses.calls) == 2                   # asked once more, got nothing, stopped
+    assert len(responses.calls) == 2  # asked once more, got nothing, stopped
 
 
 # ---- Test 8: the infinite-loop guard -------------------------------------------------------
 @responses.activate
 def test_pagination_raises_when_from_id_does_not_advance():
-    responses.get(URL, json=rows(95, 96, 97))          # a full page entirely BEFORE fromId=100
-    responses.get(URL, status=500)                     # tripwire: a 2nd request means no guard.
-    client, _ = make_client(page_limit=3)              # Without it, a missing guard would loop
-                                                       # forever and HANG the test, not fail it.
+    responses.get(URL, json=rows(95, 96, 97))  # a full page entirely BEFORE fromId=100
+    responses.get(URL, status=500)  # tripwire: a 2nd request means no guard.
+    client, _ = make_client(page_limit=3)  # Without it, a missing guard would loop
+    # forever and HANG the test, not fail it.
 
     with pytest.raises(PermanentError, match="does not move past fromId=100"):
         list(client.iter_agg_trades("BTCUSDT", from_id=100))
-    assert len(responses.calls) == 1                   # refused at once, did not loop
+    assert len(responses.calls) == 1  # refused at once, did not loop

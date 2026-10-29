@@ -29,15 +29,22 @@ PASS, FAIL = "PASS", "FAIL"
 
 # aggTrades key -> the Python type json/jsonb gives us for it
 EXPECTED_TYPES: dict[str, type] = {
-    "a": int, "p": str, "q": str, "f": int, "l": int, "T": int, "m": bool, "M": bool,
+    "a": int,
+    "p": str,
+    "q": str,
+    "f": int,
+    "l": int,
+    "T": int,
+    "m": bool,
+    "M": bool,
 }
 
 
 @dataclass(frozen=True)
 class CheckResult:
-    check: str      # "freshness" | "volume" | "schema"
-    target: str     # "BTCUSDT/aggTrades"
-    status: str     # "PASS" | "FAIL"
+    check: str  # "freshness" | "volume" | "schema"
+    target: str  # "BTCUSDT/aggTrades"
+    status: str  # "PASS" | "FAIL"
     observed: str
     expected: str
 
@@ -46,8 +53,13 @@ class CheckResult:
 def check_freshness(target: str, watermark: int | None, window_last_id: int) -> CheckResult:
     """PASS if the watermark has reached the last trade id of the window."""
     ok = watermark is not None and watermark >= window_last_id
-    return CheckResult("freshness", target, PASS if ok else FAIL,
-                       observed=f"watermark {watermark}", expected=f">= {window_last_id}")
+    return CheckResult(
+        "freshness",
+        target,
+        PASS if ok else FAIL,
+        observed=f"watermark {watermark}",
+        expected=f">= {window_last_id}",
+    )
 
 
 def check_volume(target: str, loaded_rows: int, first_id: int, last_id: int) -> CheckResult:
@@ -55,9 +67,13 @@ def check_volume(target: str, loaded_rows: int, first_id: int, last_id: int) -> 
     expected = last_id - first_id + 1
     diff = expected - loaded_rows
     note = f" ({diff} missing)" if diff > 0 else f" ({-diff} extra)" if diff < 0 else ""
-    return CheckResult("volume", target, PASS if diff == 0 else FAIL,
-                       observed=f"{loaded_rows} rows in ids {first_id}..{last_id}",
-                       expected=f"{expected} rows{note}")
+    return CheckResult(
+        "volume",
+        target,
+        PASS if diff == 0 else FAIL,
+        observed=f"{loaded_rows} rows in ids {first_id}..{last_id}",
+        expected=f"{expected} rows{note}",
+    )
 
 
 def _type_ok(value: Any, expected: type) -> bool:
@@ -96,8 +112,13 @@ def check_schema(target: str, pages: Iterable[tuple[int, Any]]) -> CheckResult:
                 bad += 1
                 first = first or f"bronze page {bronze_id} record {i}: {problem}"
     observed = f"{bad} of {total} records bad" + (f"; first: {first}" if first else "")
-    return CheckResult("schema", target, PASS if bad == 0 and total > 0 else FAIL,
-                       observed=observed, expected="0 bad (keys a p q f l T m M, typed)")
+    return CheckResult(
+        "schema",
+        target,
+        PASS if bad == 0 and total > 0 else FAIL,
+        observed=observed,
+        expected="0 bad (keys a p q f l T m M, typed)",
+    )
 
 
 # ---- gather: read the database, then call the pure checks ---------------------------------
@@ -129,8 +150,13 @@ def validate_run(dsn: str, symbol: str, run_id: str | None = None) -> tuple[str,
 
             # the window: first requested fromId .. highest trade id actually landed
             first_id = min(from_id for _, from_id, _ in pages)
-            ids = [r["a"] for _, _, body in pages if isinstance(body, list)
-                   for r in body if isinstance(r, dict) and _type_ok(r.get("a"), int)]
+            ids = [
+                r["a"]
+                for _, _, body in pages
+                if isinstance(body, list)
+                for r in body
+                if isinstance(r, dict) and _type_ok(r.get("a"), int)
+            ]
             last_id = max(ids) if ids else first_id - 1
 
             wm_row = conn.execute(
@@ -139,7 +165,7 @@ def validate_run(dsn: str, symbol: str, run_id: str | None = None) -> tuple[str,
             ).fetchone()
             loaded = conn.execute(
                 """SELECT count(*) FROM raw.binance_agg_trades
-                   WHERE symbol = %s AND agg_trade_id BETWEEN %s AND %s""",   # PK range scan
+                   WHERE symbol = %s AND agg_trade_id BETWEEN %s AND %s""",  # PK range scan
                 (symbol, first_id, last_id),
             ).fetchone()[0]
     except psycopg.Error as exc:
@@ -156,8 +182,14 @@ def validate_run(dsn: str, symbol: str, run_id: str | None = None) -> tuple[str,
         check_schema(target, ((bronze_id, body) for bronze_id, _, body in pages)),
     ]
     n_fail = sum(r.status == FAIL for r in results)
-    logger.info("%s: run %s -> %s checks, %s PASS, %s FAIL", target, run_id, len(results),
-                len(results) - n_fail, n_fail)
+    logger.info(
+        "%s: run %s -> %s checks, %s PASS, %s FAIL",
+        target,
+        run_id,
+        len(results),
+        len(results) - n_fail,
+        n_fail,
+    )
     return run_id, results
 
 
@@ -165,8 +197,17 @@ def format_summary(run_id: str, results: list[CheckResult]) -> str:
     """Plain-text table, one row per check."""
     header = ("check", "status", "observed", "expected")
     rows = [(r.check, r.status, r.observed, r.expected) for r in results]
-    widths = [max(len(str(x)) for x in col) for col in zip(header, *rows)]
-    line = lambda cells: "  ".join(str(c).ljust(w) for c, w in zip(cells, widths)).rstrip()
+    widths = [max(len(str(x)) for x in col) for col in zip(header, *rows, strict=True)]
+
+    def line(cells) -> str:
+        return "  ".join(str(c).ljust(w) for c, w in zip(cells, widths, strict=True)).rstrip()
+
     target = results[0].target if results else "?"
-    return "\n".join([f"validate {target} - run {run_id}", line(header),
-                      line(["-" * w for w in widths]), *(line(r) for r in rows)])
+    return "\n".join(
+        [
+            f"validate {target} - run {run_id}",
+            line(header),
+            line(["-" * w for w in widths]),
+            *(line(r) for r in rows),
+        ]
+    )
