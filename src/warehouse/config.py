@@ -14,23 +14,26 @@ from pydantic_settings import (
     SettingsConfigDict,
     YamlConfigSettingsSource,
 )
+
+
 ##we got the http settings in the config.yaml
 class HttpSettings(BaseModel):
     connect_timeout_s: float = 3.05
-    read_timeout_s: float =10.0
+    read_timeout_s: float = 10.0
     max_attempts: int = 5
-    retry_base_s: float = 1.0   # T028:first backoff ceiling; doubles each failed attempt
-    retry_cap_s: float = 30.0   # T028:backoff ceiling never grows past this
+    retry_base_s: float = 1.0  # T028:first backoff ceiling; doubles each failed attempt
+    retry_cap_s: float = 30.0  # T028:backoff ceiling never grows past this
+
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",
         yaml_file="config.yaml",
-        extra="ignore", # .env also holds PGADMIN_* for docker-compose; ignore them(email,password)
+        extra="ignore",  # .env also holds PGADMIN_* for docker-compose; ignore them(email,password)
     )
 
-        # --- from .env (the same variables docker-compose already uses) ---
+    # --- from .env (the same variables docker-compose already uses) ---
     postgres_user: str
     postgres_password: SecretStr
     postgres_db: str
@@ -52,7 +55,8 @@ class Settings(BaseSettings):
             f"{self.postgres_password.get_secret_value()}"
             f"@{self.postgres_host}:{self.postgres_port}/{self.postgres_db}"
         )
-    @classmethod ##Tell Pydantic which configuration sources to use, and in which priority order.
+
+    @classmethod  ##Tell Pydantic which configuration sources to use, and in which priority order.
     def settings_customise_sources(
         cls,
         settings_cls: type[BaseSettings],
@@ -72,4 +76,3 @@ class Settings(BaseSettings):
 
 def get_settings() -> Settings:
     return Settings()
-

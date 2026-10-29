@@ -50,8 +50,8 @@ class LoadResult:
     run_id: str
     symbol: str
     pages: int
-    offered: int                   # trades parsed from bronze
-    inserted: int                  # trades that were new to raw
+    offered: int  # trades parsed from bronze
+    inserted: int  # trades that were new to raw
     watermark_before: int | None
     watermark_after: int | None
 
@@ -131,15 +131,29 @@ def load_run(
 
                 wm_before = _read_watermark_for_update(conn, symbol)
                 if not pages:
-                    logger.info("%s: run %s has no aggTrades pages in bronze; nothing to load", symbol, run_id)
+                    logger.info(
+                        "%s: run %s has no aggTrades pages in bronze; nothing to load", symbol, run_id
+                    )
                     return LoadResult(run_id, symbol, 0, 0, 0, wm_before, wm_before)
 
                 rows: list[tuple] = []
                 for bronze_id, body in pages:
                     for t in parse_page(symbol, body, bronze_id):
-                        rows.append((t.symbol, t.agg_trade_id, t.price, t.qty, t.first_trade_id,
-                                     t.last_trade_id, t.ts_us, t.is_buyer_maker, t.is_best_match,
-                                     SOURCE, bronze_id))
+                        rows.append(
+                            (
+                                t.symbol,
+                                t.agg_trade_id,
+                                t.price,
+                                t.qty,
+                                t.first_trade_id,
+                                t.last_trade_id,
+                                t.ts_us,
+                                t.is_buyer_maker,
+                                t.is_best_match,
+                                SOURCE,
+                                bronze_id,
+                            )
+                        )
 
                 with conn.cursor() as cur:
                     cur.executemany(INSERT_SQL.format(table=sql.Identifier(*target.split("."))), rows)
@@ -150,11 +164,20 @@ def load_run(
                 if advance_watermark:
                     wm_after = _advance_watermark(conn, symbol, wm_before, run_min, run_max)
                 else:
-                    wm_after=wm_before
+                    wm_after = wm_before
                     logger.info("%s: side load into %s; watermark left untouched", symbol, target)
 
-        logger.info("%s: run %s -> %s pages, %s trades offered, %s new in %s; watermark %s -> %s",
-                    symbol, run_id, len(pages), len(rows), inserted, target, wm_before, wm_after)
+        logger.info(
+            "%s: run %s -> %s pages, %s trades offered, %s new in %s; watermark %s -> %s",
+            symbol,
+            run_id,
+            len(pages),
+            len(rows),
+            inserted,
+            target,
+            wm_before,
+            wm_after,
+        )
         return LoadResult(run_id, symbol, len(pages), len(rows), inserted, wm_before, wm_after)
 
     except psycopg.Error as exc:
@@ -171,8 +194,15 @@ def _advance_watermark(
 ) -> int | None:
     """Apply the two watermark rules inside the caller's transaction; return the new value."""
     if wm_before is not None and run_min > wm_before + 1:
-        logger.warning("%s: gap - run starts at %s but watermark is %s (ids %s..%s never loaded); "
-                       "watermark left at %s", symbol, run_min, wm_before, wm_before + 1, run_min - 1, wm_before)
+        logger.warning(
+            "%s: gap - run starts at %s but watermark is %s (ids %s..%s never loaded); watermark left at %s",
+            symbol,
+            run_min,
+            wm_before,
+            wm_before + 1,
+            run_min - 1,
+            wm_before,
+        )
         return wm_before
     if wm_before is not None and run_max <= wm_before:
         return wm_before  # replay of older data: nothing to move
