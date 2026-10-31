@@ -1,0 +1,31 @@
+name: CI
+
+on:
+    pull_request:
+    push:
+      branches: [main]
+
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      # setup-uv v8 no longer publishes a floating "@v8" tag: pin the exact version
+      - uses: astral-sh/setup-uv@v8.1.0
+        with:
+         enable-cache: true
+      - name: install exactly what uv.lock says (fail if the lock is out of date)
+        run: uv sync --locked
+      
+      - name: Lint
+        run: uv run ruff check .
+
+      - name: Format check (never rewrites files in CI, only reports)
+        run: uv run ruff format --check .
+
+# Integration tests need Postgres, which this CORE job does not start (that is the STRETCH).
+# Excluded EXPLICITLY, so they cannot silently skip and look like a pass.
+      - name: Unit tests
+        run: uv run pytest --ignore=tests/test_integration.py -v
+
