@@ -8,16 +8,18 @@ uv run warehouse exchangeinfo
 uv run warehouse ingest [--symbol S] [--from-id N] [--max-pages N] [--stop-at-id N]
 uv run warehouse load --run-id RUN [--symbol S] [--table schema.table] [--no-watermark]
 uv run warehouse validate [--symbol S] [--run-id RUN]
+uv run warehouse backfill --start YYYY-MM-DD --end YYYY-MM-DD [--symbol S] [--data-dir DIR]
 """
 
 import argparse
 import logging
 import sys
+from datetime import date
 from pathlib import Path
 
 from pydantic import ValidationError
 
-from warehouse.bulk import load_zip
+from warehouse.bulk import load_zip, run_backfill
 from warehouse.client import BinanceClient
 from warehouse.config import Settings, get_settings
 from warehouse.errors import WarehouseError
@@ -74,6 +76,11 @@ def build_parser() -> argparse.ArgumentParser:
         "--symbol", default=None, help="default: first symbol in config.yaml"
     )  ##allow we specify it in the command line
     val.add_argument("--run-id", default=None, help="default: the latest aggTrades run for the symbol")
+    bf = sub.add_parser("backfill", help="load downloaded daily bulk zips into raw.binance_agg_trades")
+    bf.add_argument("--symbol", default=None, help="default: first symbol in config.yaml")
+    bf.add_argument("--start", type=date.fromisoformat, required=True, help="first day, YYYY-MM-DD")
+    bf.add_argument("--end", type=date.fromisoformat, required=True, help="last day (inclusive), YYYY-MM-DD")
+    bf.add_argument("--data-dir", type=Path, default=Path("data/binance"), help="where the zips are")
     return parser
 
 
@@ -175,6 +182,15 @@ def main(argv: list[str] | None = None) -> int:
                 target=args.table,
                 advance_watermark=not args.no_watermark,
             )
+        elif args.command == "backfill":
+            run_backfill(
+                settings.dsn.get_secret_value(),
+                args.symbol or settings.symbols[0],
+                args.start,
+                args.end,
+                args.data_dir,
+            )
+
         elif args.command == "validate":
             used_run, results = validate_run(
                 settings.dsn.get_secret_value(), args.symbol or settings.symbols[0], args.run_id
