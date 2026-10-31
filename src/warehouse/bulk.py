@@ -80,9 +80,7 @@ def _copy_and_insert(
                 copied += 1
 
         cur.execute(
-            sql.SQL("INSERT INTO {} SELECT %s, s.*, %s, %s FROM {} s").format(
-                _table(target), _table(stage)
-            ),
+            sql.SQL("INSERT INTO {} SELECT %s, s.*, %s, %s FROM {} s").format(_table(target), _table(stage)),
             (symbol, csv_name, batch_id),
         )
         inserted = cur.rowcount
@@ -105,7 +103,9 @@ def load_zip(
             csv_name, copied, inserted = _copy_and_insert(zf, symbol, dsn, batch_id, target, stage)
     except psycopg.errors.UndefinedTable as exc:
         first_line = str(exc).splitlines()[0]  # e.g. relation "raw.x" does not exist
-        raise PermanentError(f"{first_line} - run sql/analytical/00_setup.sql or check --table/--stage") from exc
+        raise PermanentError(
+            f"{first_line} - run sql/analytical/00_setup.sql or check --table/--stage"
+        ) from exc
     except (psycopg.DataError, psycopg.IntegrityError) as exc:
         # DataError:      bad value, e.g. 'maybe' in a boolean column, or a number too large
         # IntegrityError: a constraint broke, e.g. NULL in a NOT NULL column

@@ -25,7 +25,7 @@ def test_volume_passes_when_every_id_is_present():
 # ---- Test 10: schema drift -----------------------------------------------------------------
 def test_schema_fails_when_a_key_is_missing():
     page = [good(1), good(2), good(3)]
-    del page[1]["T"]                                   # Binance "drops" a field in one record
+    del page[1]["T"]  # Binance "drops" a field in one record
 
     result = check_schema(TARGET, [(42, page)])
 

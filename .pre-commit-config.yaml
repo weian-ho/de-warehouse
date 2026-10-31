@@ -1,0 +1,16 @@
+# Runs before every `git commit`. Install once per clone:  uv run pre-commit install
+# "local" hooks call the ruff pinned in uv.lock: one version everywhere (your laptop,
+# pre-commit, CI) and nothing extra to download through the corporate proxy.
+repos:
+  - repo: local
+    hooks:
+      - id: ruff-check
+        name: ruff check (lint, auto-fix what is safe)
+        entry: uv run ruff check --fix
+        language: system
+        types_or: [python, pyi]
+      - id: ruff-format
+        name: ruff format
+        entry: uv run ruff format
+        language: system
+        types_or: [python, pyi]

@@ -29,8 +29,16 @@ def test_normalise_ts_to_us_handles_both_units(raw, expected_us):
 
 # ---- Test 2: money correctness -----------------------------------------------------------
 def _record(**overrides):
-    rec = {"a": 1, "p": "93500.10000000", "q": "0.00100000", "f": 10, "l": 11,
-           "T": NEW_YEAR_US, "m": True, "M": True}
+    rec = {
+        "a": 1,
+        "p": "93500.10000000",
+        "q": "0.00100000",
+        "f": 10,
+        "l": 11,
+        "T": NEW_YEAR_US,
+        "m": True,
+        "M": True,
+    }
     rec.update(overrides)
     return rec
 
@@ -40,12 +48,12 @@ def test_parsed_price_and_qty_are_exact_decimals():
 
     assert isinstance(trade.price, Decimal) and not isinstance(trade.price, float)
     assert isinstance(trade.qty, Decimal) and not isinstance(trade.qty, float)
-    assert trade.price == Decimal("93500.10")          # exact, no binary rounding
-    assert trade.qty * 3 == Decimal("0.003")            # with float: 0.001 * 3 = 0.0030000000000000005
+    assert trade.price == Decimal("93500.10")  # exact, no binary rounding
+    assert trade.qty * 3 == Decimal("0.003")  # with float: 0.001 * 3 = 0.0030000000000000005
 
 
 def test_a_float_price_is_refused_on_both_layers():
-    with pytest.raises(TypeError):                      # parser: price must arrive as a string
+    with pytest.raises(TypeError):  # parser: price must arrive as a string
         parse_trade("BTCUSDT", _record(p=93500.1))
-    with pytest.raises(TypeError):                      # model: AggTrade itself rejects a float
+    with pytest.raises(TypeError):  # model: AggTrade itself rejects a float
         AggTrade("BTCUSDT", 1, 93500.1, Decimal("1"), 10, 11, NEW_YEAR_US, True, True)

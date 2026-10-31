@@ -28,8 +28,8 @@ from warehouse.errors import Banned, PermanentError, RateLimited, TransientError
 logger = logging.getLogger(__name__)
 
 AGG_TRADES_PATH = "/api/v3/aggTrades"
-MAX_PAGE_LIMIT = 1000           # Binance's maximum for aggTrades
-DEFAULT_RETRY_AFTER_S = 60      # used only if a 429/418 arrives without a Retry-After header
+MAX_PAGE_LIMIT = 1000  # Binance's maximum for aggTrades
+DEFAULT_RETRY_AFTER_S = 60  # used only if a 429/418 arrives without a Retry-After header
 
 
 @dataclass(frozen=True)
@@ -141,8 +141,12 @@ class BinanceClient:
                 if attempt == max_attempts:
                     raise
                 wait = float(exc.retry_after)
-                logger.warning("429 rate limited; waiting Retry-After=%ss (attempt %s/%s)",
-                               exc.retry_after, attempt, max_attempts)
+                logger.warning(
+                    "429 rate limited; waiting Retry-After=%ss (attempt %s/%s)",
+                    exc.retry_after,
+                    attempt,
+                    max_attempts,
+                )
             except TransientError as exc:
                 if attempt == max_attempts:
                     raise
@@ -172,7 +176,9 @@ class BinanceClient:
             fetched_at = datetime.now(UTC)
 
             if not isinstance(rows, list):
-                raise PermanentError(f"expected a JSON list from {AGG_TRADES_PATH}, got {type(rows).__name__}")
+                raise PermanentError(
+                    f"expected a JSON list from {AGG_TRADES_PATH}, got {type(rows).__name__}"
+                )
             if not rows:
                 logger.info("%s: empty page at fromId=%s -> caught up", symbol, from_id)
                 return
@@ -190,8 +196,15 @@ class BinanceClient:
                     return
 
             first_id, last_id = rows[0]["a"], rows[-1]["a"]
-            logger.info("%s: page fromId=%s -> ids %s..%s (%s rows), used weight %s",
-                        symbol, from_id, first_id, last_id, len(rows), self.last_used_weight)
+            logger.info(
+                "%s: page fromId=%s -> ids %s..%s (%s rows), used weight %s",
+                symbol,
+                from_id,
+                first_id,
+                last_id,
+                len(rows),
+                self.last_used_weight,
+            )
             yield Page(endpoint=AGG_TRADES_PATH, params=params, rows=rows, fetched_at=fetched_at)
 
             if not full_page or (stop_at_id is not None and last_id >= stop_at_id):

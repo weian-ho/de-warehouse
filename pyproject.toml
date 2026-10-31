@@ -22,6 +22,17 @@ build-backend = "uv_build"
 
 [dependency-groups]
 dev = [
+    "pre-commit>=4.7.0",
     "pytest>=9.1.1",
     "responses>=0.26.3",
+    "ruff>=0.17.3",
 ]
+
+
+[tool.ruff]
+line-length = 110          # matches how the code is written: least one-time reformatting
+# target Python version is read from requires-python (>=3.13): one source of truth
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP"]   # explicit, so a ruff upgrade can't silently change the rules
+ignore = ["E501"]                          # the formatter owns line length; long SQL/log strings can't wrap

@@ -1,13 +1,13 @@
 """Command-line entry point: the only module that wires everything together.
 
-    uv run warehouse show-config
-    uv run warehouse bulk <zip> [--batch-id N] [--table schema.table]
-    uv run warehouse agg-trades [--symbol S] [--from-id N] [--max-pages N]
-    uv run warehouse extract [--symbol S] [--from-id N] [--max-pages N] [--stop-at-id N]
-    uv run warehouse exchangeinfo
-    uv run warehouse ingest [--symbol S] [--from-id N] [--max-pages N] [--stop-at-id N]
-    uv run warehouse load --run-id RUN [--symbol S] [--table schema.table] [--no-watermark]
-    uv run warehouse validate [--symbol S] [--run-id RUN]
+uv run warehouse show-config
+uv run warehouse bulk <zip> [--batch-id N] [--table schema.table]
+uv run warehouse agg-trades [--symbol S] [--from-id N] [--max-pages N]
+uv run warehouse extract [--symbol S] [--from-id N] [--max-pages N] [--stop-at-id N]
+uv run warehouse exchangeinfo
+uv run warehouse ingest [--symbol S] [--from-id N] [--max-pages N] [--stop-at-id N]
+uv run warehouse load --run-id RUN [--symbol S] [--table schema.table] [--no-watermark]
+uv run warehouse validate [--symbol S] [--run-id RUN]
 """
 
 import argparse
@@ -25,7 +25,6 @@ from warehouse.extract import run_exchange_info, run_extract
 from warehouse.load import load_run
 from warehouse.log import new_run_id, setup_logging
 from warehouse.validate import FAIL, format_summary, validate_run
-
 
 logger = logging.getLogger(__name__)
 
@@ -55,7 +54,9 @@ def build_parser() -> argparse.ArgumentParser:
 
     sub.add_parser("exchangeinfo", help="land one exchangeInfo snapshot per configured symbol in bronze")
 
-    ing = sub.add_parser("ingest", help="extract to bronze, then load that run into raw (moves the watermark)")
+    ing = sub.add_parser(
+        "ingest", help="extract to bronze, then load that run into raw (moves the watermark)"
+    )
     ing.add_argument("--symbol", default=None, help="default: first symbol in config.yaml")
     ing.add_argument("--from-id", type=int, default=None, help="override the watermark and start here")
     ing.add_argument("--max-pages", type=int, default=100, help="cap on pages per run (default 100)")
@@ -66,8 +67,12 @@ def build_parser() -> argparse.ArgumentParser:
     ld.add_argument("--symbol", default=None, help="default: first symbol in config.yaml")
     ld.add_argument("--table", default="raw.binance_agg_trades", help="target schema.table")
     ld.add_argument("--no-watermark", action="store_true", help="side load: do not touch the watermark")
-    val = sub.add_parser("validate", help="freshness, volume and schema checks for one ingest run")##we want to recognise this subcommand
-    val.add_argument("--symbol", default=None, help="default: first symbol in config.yaml")##allow we specify it in the command line
+    val = sub.add_parser(
+        "validate", help="freshness, volume and schema checks for one ingest run"
+    )  ##we want to recognise this subcommand
+    val.add_argument(
+        "--symbol", default=None, help="default: first symbol in config.yaml"
+    )  ##allow we specify it in the command line
     val.add_argument("--run-id", default=None, help="default: the latest aggTrades run for the symbol")
     return parser
 
@@ -84,8 +89,15 @@ def ingest(settings: Settings, args: argparse.Namespace, run_id: str) -> None:
     extract_error: WarehouseError | None = None
     with BinanceClient(settings.base_url, settings.http, settings.page_limit) as client:
         try:
-            run_extract(client, dsn, symbol, run_id, from_id=args.from_id,
-                        max_pages=args.max_pages, stop_at_id=args.stop_at_id)
+            run_extract(
+                client,
+                dsn,
+                symbol,
+                run_id,
+                from_id=args.from_id,
+                max_pages=args.max_pages,
+                stop_at_id=args.stop_at_id,
+            )
         except WarehouseError as exc:
             extract_error = exc
             logger.warning("extract stopped early (%s); loading the pages that did land", exc)
@@ -156,7 +168,7 @@ def main(argv: list[str] | None = None) -> int:
         elif args.command == "ingest":
             ingest(settings, args, run_id)
         elif args.command == "load":
-             load_run(
+            load_run(
                 settings.dsn.get_secret_value(),
                 args.run_id,
                 args.symbol or settings.symbols[0],
