@@ -1,9 +1,10 @@
+# T038: on every pull request (and every push to main): install, lint, format-check, unit tests.
 name: CI
 
 on:
-    pull_request:
-    push:
-      branches: [main]
+  pull_request:
+  push:
+    branches: [main]
 
 jobs:
   checks:
@@ -14,18 +15,18 @@ jobs:
       # setup-uv v8 no longer publishes a floating "@v8" tag: pin the exact version
       - uses: astral-sh/setup-uv@v8.1.0
         with:
-         enable-cache: true
-      - name: install exactly what uv.lock says (fail if the lock is out of date)
+          enable-cache: true
+
+      - name: Install exactly what uv.lock says (fail if the lock is out of date)
         run: uv sync --locked
-      
+
       - name: Lint
         run: uv run ruff check .
 
       - name: Format check (never rewrites files in CI, only reports)
         run: uv run ruff format --check .
 
-# Integration tests need Postgres, which this CORE job does not start (that is the STRETCH).
-# Excluded EXPLICITLY, so they cannot silently skip and look like a pass.
+      # Integration tests need Postgres, which this CORE job does not start (that is the STRETCH).
+      # Excluded EXPLICITLY, so they cannot silently skip and look like a pass.
       - name: Unit tests
         run: uv run pytest --ignore=tests/test_integration.py -v
-
