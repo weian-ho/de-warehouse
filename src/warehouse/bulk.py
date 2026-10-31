@@ -17,8 +17,13 @@ later (transform.normalise_ts_to_us, used from T030).
 import csv
 import io
 import logging
+import time
 import zipfile
 from collections.abc import Iterator
+from dataclasses import dataclass
+from datetime import date, timedelta
+from decimal import InvalidOperation
+from itertools import islice
 from pathlib import Path
 from typing import IO
 
@@ -26,6 +31,8 @@ import psycopg
 from psycopg import sql
 
 from warehouse.errors import PermanentError, TransientError
+from warehouse.load import DEFAULT_TARGET, INSERT_SQL, parse_trade
+from warehouse.transform import parse_bool
 
 logger = logging.getLogger(__name__)
 
@@ -119,3 +126,124 @@ def load_zip(
         raise PermanentError(f"{csv_name}: copied {copied} rows but inserted {inserted}")
     logger.info("loaded %s rows from %s into %s (batch %s)", inserted, csv_name, target, batch_id)
     return inserted
+
+
+BULK_SOURCE = "binance_bulk"
+CHUNK_ROWS = 50_000  # rows per executemany: keeps memory flat on million-row days
+
+
+@dataclass(frozen=True)
+class BackfillDay:
+    day: date
+    file: str
+    offered: int
+    inserted: int
+
+
+def day_files(data_dir: Path, symbol: str, start: date, end: date) -> list[tuple[date, Path]]:
+    """Every day in [start, end] (inclusive) with its zip. Refuses up front if any file is missing."""
+    if end < start:
+        raise PermanentError(f"--end {end} is before --start {start}")
+    days = [start + timedelta(days=i) for i in range((end - start).days + 1)]
+    files = [(d, data_dir / f"{symbol}-aggTrades-{d.isoformat()}.zip") for d in days]
+    missing = [p.name for _, p in files if not p.is_file()]
+    if missing:
+        raise PermanentError(
+            f"{len(missing)} file(s) missing in {data_dir}: {', '.join(missing)} "
+            "- refusing to start, a skipped day would be a silent gap"
+        )
+    return files
+
+
+def iter_raw_rows(zip_path: Path, symbol: str) -> Iterator[tuple]:
+    """Zip -> CSV rows -> AggTrade (same parse_trade as REST) -> tuples in INSERT_SQL column order."""
+    with zipfile.ZipFile(zip_path) as zf:
+        csv_name = zf.namelist()[0]
+        with zf.open(csv_name) as raw:
+            for n, rec in enumerate(iter_csv_rows(raw, csv_name), start=1):
+                agg_id, price, qty, first_id, last_id, ts, maker, best = rec
+                try:
+                    t = parse_trade(
+                        symbol,
+                        {
+                            "a": int(agg_id),
+                            "p": price,
+                            "q": qty,
+                            "f": int(first_id),
+                            "l": int(last_id),
+                            "T": int(ts),
+                            "m": parse_bool(maker),
+                            "M": parse_bool(best),
+                        },
+                    )
+                except (KeyError, ValueError, TypeError, InvalidOperation) as exc:
+                    raise PermanentError(f"{csv_name} data row {n}: {exc}") from exc
+                yield (
+                    t.symbol,
+                    t.agg_trade_id,
+                    t.price,
+                    t.qty,
+                    t.first_trade_id,
+                    t.last_trade_id,
+                    t.ts_us,
+                    t.is_buyer_maker,
+                    t.is_best_match,
+                    BULK_SOURCE,
+                    None,
+                )
+
+
+def _chunks(rows: Iterator[tuple], size: int) -> Iterator[list[tuple]]:
+    while chunk := list(islice(rows, size)):
+        yield chunk
+
+
+def backfill_day(conn: psycopg.Connection, zip_path: Path, symbol: str) -> tuple[int, int]:
+    """Load one day in ONE transaction: the whole day commits, or none of it. Returns (offered, inserted)."""
+    stmt = INSERT_SQL.format(table=_table(DEFAULT_TARGET))
+    offered = inserted = 0
+    with conn.transaction(), conn.cursor() as cur:
+        for chunk in _chunks(iter_raw_rows(zip_path, symbol), CHUNK_ROWS):
+            cur.executemany(stmt, chunk)
+            offered += len(chunk)
+            inserted += cur.rowcount  # conflicts (already-loaded trades) count 0
+    return offered, inserted
+
+
+def run_backfill(dsn: str, symbol: str, start: date, end: date, data_dir: Path) -> list[BackfillDay]:
+    """Backfill [start, end] day by day. Never touches the watermark: that belongs to the REST tail."""
+    files = day_files(data_dir, symbol, start, end)  # every file present, or nothing starts
+    results: list[BackfillDay] = []
+    try:
+        with psycopg.connect(dsn) as conn:
+            for day, path in files:
+                t0 = time.monotonic()
+                offered, inserted = backfill_day(conn, path, symbol)
+                results.append(BackfillDay(day, path.name, offered, inserted))
+                logger.info(
+                    "%s %s: %s rows offered, %s new in %s (%.1fs)",
+                    symbol,
+                    day,
+                    offered,
+                    inserted,
+                    DEFAULT_TARGET,
+                    time.monotonic() - t0,
+                )
+    except psycopg.Error as exc:
+        first = str(exc).splitlines()[0]
+        if isinstance(exc, psycopg.errors.UndefinedTable):
+            raise PermanentError(f"{first} - run sql/ddl/02_raw_binance.sql") from exc
+        if isinstance(exc, psycopg.OperationalError):
+            raise TransientError(f"database unavailable: {first}") from exc
+        raise PermanentError(f"database error: {first}") from exc
+    finally:
+        if results:
+            logger.info(
+                "%s backfill: %s of %s days done, %s rows offered, %s new",
+                symbol,
+                len(results),
+                len(files),
+                sum(r.offered for r in results),
+                sum(r.inserted for r in results),
+            )
+    return results

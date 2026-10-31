@@ -12,3 +12,15 @@ def normalise_ts_to_us(ts: int) -> int:
     magnitude (not by date) means the code is right for either unit.
     """
     return ts * 1000 if ts < _US_THRESHOLD else ts
+
+
+def parse_bool(value: str | None) -> bool:
+    """Binance CSVs write booleans as 'True'/'False' (case-insensitive)."""
+    if not isinstance(value, str):
+        raise ValueError(f"not a boolean: {value!r}")
+    v = value.strip().lower()
+    if v in ("true", "1"):
+        return True
+    if v in ("false", "0"):
+        return False
+    raise ValueError(f"not a boolean: {value!r}")
