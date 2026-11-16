@@ -257,4 +257,88 @@ the DDL can be re-run.
 
 ## 10. ERD
 
-Added in T051.
+Two facts, four dimensions. `fact_recon_minute` and `dim_recon_run` are added when built (STRETCH).
+The diagram can't show three rules: intervals are half-open, `dim_instrument` versions
+never overlap (exclusion constraint, T052), and no fact joins to another fact.
+
+```mermaid
+erDiagram
+    dim_date ||--o{ fact_trade : "date_key"
+    dim_venue ||--o{ fact_trade : "venue_key"
+    dim_instrument ||--o{ fact_trade : "instrument_key (version at trade time)"
+    dim_date ||--o{ fact_market_minute : "date_key"
+    dim_venue ||--o{ fact_market_minute : "venue_key"
+    dim_instrument ||--o{ fact_market_minute : "instrument_key (version at minute start)"
+    dim_venue ||--o{ dim_instrument : "venue_key"
+    dim_asset ||--o{ dim_instrument : "base_asset_key"
+    dim_asset ||--o{ dim_instrument : "quote_asset_key"
+
+    dim_date {
+        int date_key PK "YYYYMMDD, UTC"
+        date full_date UK
+        int year
+        int month
+        int day_of_week
+        boolean is_weekend
+    }
+    dim_venue {
+        int venue_key PK "-1 = unknown"
+        text venue_code UK "binance, kraken"
+        text venue_name
+    }
+    dim_asset {
+        int asset_key PK "-1 = unknown"
+        text asset_code UK "BTC, USDT"
+    }
+    dim_instrument {
+        bigint instrument_key PK "one per VERSION, -1 = unknown"
+        int venue_key FK
+        text symbol "natural key with venue_key"
+        int base_asset_key FK "Type 0"
+        int quote_asset_key FK "Type 0"
+        numeric tick_size "Type 2"
+        numeric lot_step "Type 2"
+        numeric min_notional "Type 2"
+        text status "Type 2"
+        timestamptz valid_from "observation time, -infinity for first version"
+        timestamptz valid_to "infinity = current, half-open"
+        boolean is_current
+        boolean is_inferred "history assumed before first snapshot"
+        text attr_hash
+        bigint snapshot_page_id "lineage to bronze.api_pages.id"
+    }
+    fact_trade {
+        int venue_key PK, FK "grain part 1"
+        text symbol PK "grain part 2"
+        bigint agg_trade_id PK "grain part 3, degenerate dimension"
+        bigint instrument_key FK
+        int date_key FK
+        timestamptz trade_time "UTC"
+        numeric price "non-additive"
+        numeric qty "additive within instrument"
+        numeric quote_qty "price x qty, unconstrained numeric"
+        int fill_count "last - first + 1"
+        boolean is_buyer_maker
+        boolean is_best_match
+        bigint first_trade_id "degenerate"
+        bigint last_trade_id "degenerate"
+        text source "binance_rest or binance_bulk"
+        text load_run_id
+    }
+    fact_market_minute {
+        int venue_key PK, FK "grain part 1"
+        text symbol PK "grain part 2"
+        timestamptz minute_utc PK "grain part 3, start of the minute"
+        bigint instrument_key FK
+        int date_key FK
+        numeric open
+        numeric high
+        numeric low
+        numeric close
+        numeric volume
+        numeric quote_volume "unconstrained numeric"
+        int agg_trade_rows
+        int trade_count "sum of fills"
+        text load_run_id
+    }
+```
