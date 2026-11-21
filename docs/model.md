@@ -223,6 +223,7 @@ the DDL can be re-run.
 | D2 | Facts key on natural keys `(venue, symbol, …)`; instrument version is a foreign key | Versions can change inside a grain period |
 | D3 | First instrument version from `-infinity`, `is_inferred = true` | Trades are backfilled from 2024-12-31; the first snapshot is later |
 | D4 | One check type per reconciliation run | Keeps the reconciliation grain intact when checks are added |
+| D5 | 00_extensions.sql (btree_gist), 01_dimensions_sql, 02_facts.sql, 03_seed.sql(-1 and dim_date has no unknown member, the timestamp is covered from 2024-2030)
 
 ---
 
