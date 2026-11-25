@@ -4,7 +4,7 @@
 PG_CONTAINER ?= dw_postgres
 SYMBOL       ?= BTCUSDT
 MAX_PAGES    ?= 100
-DDL          := sql/ddl/01_bronze_meta.sql sql/ddl/02_raw_binance.sql
+DDL          := sql/ddl/01_bronze_meta.sql sql/ddl/02_raw_binance.sql sql/ddl/03_snapshot_state.sql
 GOLD_DDL     := sql/gold/00_extensions.sql sql/gold/01_dimensions.sql sql/gold/02_facts.sql sql/gold/03_seed.sql
 # psql inside the container, stopping at the first error; NOTICEs ("already exists, skipping") hidden
 PSQL         := docker exec -i -e PGOPTIONS="-c client_min_messages=warning" $(PG_CONTAINER) \

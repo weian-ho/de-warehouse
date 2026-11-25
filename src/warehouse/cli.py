@@ -9,6 +9,7 @@ uv run warehouse ingest [--symbol S] [--from-id N] [--max-pages N] [--stop-at-id
 uv run warehouse load --run-id RUN [--symbol S] [--table schema.table] [--no-watermark]
 uv run warehouse validate [--symbol S] [--run-id RUN]
 uv run warehouse backfill --start YYYY-MM-DD --end YYYY-MM-DD [--symbol S] [--data-dir DIR]
+uv run warehouse load-instruments [--page-id N]
 """
 
 import argparse
@@ -26,6 +27,7 @@ from warehouse.errors import WarehouseError
 from warehouse.extract import run_exchange_info, run_extract
 from warehouse.load import load_run
 from warehouse.log import new_run_id, setup_logging
+from warehouse.scd2 import run_scd2
 from warehouse.validate import FAIL, format_summary, validate_run
 
 logger = logging.getLogger(__name__)
@@ -81,6 +83,12 @@ def build_parser() -> argparse.ArgumentParser:
     bf.add_argument("--start", type=date.fromisoformat, required=True, help="first day, YYYY-MM-DD")
     bf.add_argument("--end", type=date.fromisoformat, required=True, help="last day (inclusive), YYYY-MM-DD")
     bf.add_argument("--data-dir", type=Path, default=Path("data/binance"), help="where the zips are")
+    li = sub.add_parser(
+        "load-instruments", help="apply exchangeInfo snapshots in bronze to gold.dim_instrument (SCD2)"
+    )
+    li.add_argument(
+        "--page-id", type=int, default=None, help="one bronze page; default: every pending snapshot"
+    )
     return parser
 
 
@@ -190,6 +198,8 @@ def main(argv: list[str] | None = None) -> int:
                 args.end,
                 args.data_dir,
             )
+        elif args.command == "load-instruments":
+            run_scd2(settings.dsn.get_secret_value(), args.page_id)
 
         elif args.command == "validate":
             used_run, results = validate_run(
