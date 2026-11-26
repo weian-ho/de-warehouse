@@ -112,7 +112,7 @@ FROM   stg_instrument s
 WHERE  d.venue_key = %(venue_key)s
   AND  d.symbol    = s.symbol
   AND  d.is_current
-  AND  d.attr_hash <> s.attr_hash
+  AND d.attr_hash <> s.attr_hash
 RETURNING d.symbol
 """
 
