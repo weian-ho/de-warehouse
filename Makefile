@@ -54,7 +54,7 @@ ingest:
 # All four gold files run as ONE transaction (-1): a failure in any file leaves gold unchanged.
 gold: up
 	@echo "applying $(GOLD_DDL) in one transaction"
-	@cat $(GOLD_DDL) | $(PSQL) -1
+	@cat $(GOLD_DDL) | $(PSQL) -1 -f -
 	@$(PSQL) -t -A -F ' ' -c "SELECT 'gold ready:', (SELECT count(*) FROM gold.dim_date), 'dates,', \
 		(SELECT count(*) FROM gold.dim_venue), 'venues,', (SELECT count(*) FROM gold.dim_instrument), 'instrument versions'"
 
@@ -62,5 +62,5 @@ gold: up
 # dim_instrument history by replaying the bronze exchangeInfo snapshots in order (T055).
 gold-reset: up
 	@if [ "$(CONFIRM)" != "yes" ]; then echo "refusing: this drops schema gold and all its data. Run: make gold-reset CONFIRM=yes"; exit 1; fi
-	$(PSQL) -c "DROP SCHEMA IF EXISTS gold CASCADE"
-	@$(MAKE) --no-print-directory gold
+	$(PSQL) -c "DROP SCHEMA IF EXISTS gold CASCADE; DELETE FROM meta.snapshot_state WHERE source = 'binance_exchangeinfo'"
+	@"$(MAKE)" --no-print-directory gold
